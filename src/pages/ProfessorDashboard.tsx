@@ -33,6 +33,9 @@ import { listSubmissionsByAssignment, updateSubmission } from '../lib/submission
 import { Submission } from '../types/submission';
 import { useToast } from '../hooks/use-toast';
 import GradeSubmissionsModal from '../components/GradeSubmissionsModal';
+import { ClassSession } from '../types/schedule';
+import { listSessionsByProfessor, createSession, updateSession as updateClassSession, cancelSession } from '../lib/scheduleStorage';
+import ScheduleClassModal from '../components/ScheduleClassModal';
 
 // Mock data for demonstration
 const mockStats = {
@@ -66,11 +69,17 @@ const ProfessorDashboard: React.FC = () => {
   const navigate = useNavigate();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [activeSection, setActiveSection] = useState<'dashboard' | 'assignments' | 'all_assignments'>('dashboard');
+  const [activeSection, setActiveSection] = useState<'dashboard' | 'assignments' | 'all_assignments' | 'schedule'>('dashboard');
 
   const [isGradeOpen, setIsGradeOpen] = useState(false);
   const [gradeList, setGradeList] = useState<Submission[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [isScheduleOpen, setIsScheduleOpen] = useState(false);
+  const [editSession, setEditSession] = useState<ClassSession | null>(null);
+  const [currentMonth, setCurrentMonth] = useState(() => {
+    const d = new Date();
+    return new Date(d.getFullYear(), d.getMonth(), 1);
+  });
 
   const professorCourses = useMemo<Course[]>(() => {
     return user ? getCoursesByProfessor(user.id) : [];
@@ -89,6 +98,41 @@ const ProfessorDashboard: React.FC = () => {
     data.sort((a, b) => new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime());
     return data;
   }, [professorCourses]);
+
+  const mySessions = useMemo<ClassSession[]>(() => {
+    if (!user) return [];
+    return listSessionsByProfessor(user.id).sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime));
+  }, [user, refreshKey]);
+
+  const monthLabel = useMemo(() => currentMonth.toLocaleString(undefined, { month: 'long', year: 'numeric' }), [currentMonth]);
+
+  const monthDays = useMemo(() => {
+    const year = currentMonth.getFullYear();
+    const month = currentMonth.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const startWeekday = firstDay.getDay(); // 0 Sun - 6 Sat
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const days: Array<{ date: string; dayNum: number } | null> = [];
+    for (let i = 0; i < startWeekday; i++) days.push(null);
+    for (let d = 1; d <= daysInMonth; d++) {
+      const ds = new Date(year, month, d);
+      const iso = ds.toISOString().slice(0, 10);
+      days.push({ date: iso, dayNum: d });
+    }
+    // pad to full weeks
+    while (days.length % 7 !== 0) days.push(null);
+    return days;
+  }, [currentMonth]);
+
+  const sessionsByDate = useMemo(() => {
+    const map = new Map<string, ClassSession[]>();
+    for (const s of mySessions) {
+      const arr = map.get(s.date) || [];
+      arr.push(s);
+      map.set(s.date, arr);
+    }
+    return map;
+  }, [mySessions]);
 
   const studentGroups = useMemo(() => {
     const byStudent = new Map<string, { studentName: string; submissions: Submission[] }>();
@@ -224,7 +268,7 @@ const ProfessorDashboard: React.FC = () => {
               <FileText className="h-4 w-4 mr-3" />
               Assignments
             </Button>
-            <Button variant="ghost" className="w-full justify-start" onClick={() => setIsSidebarOpen(false)}>
+            <Button variant="ghost" className="w-full justify-start" onClick={() => { setActiveSection('schedule'); setIsSidebarOpen(false); }}>
               <Calendar className="h-4 w-4 mr-3" />
               Schedule
             </Button>
@@ -397,7 +441,7 @@ const ProfessorDashboard: React.FC = () => {
                   </CardContent>
                 </Card>
               </>
-            ) : (
+            ) : activeSection === 'all_assignments' ? (
               <>
                 <div className="flex justify-between items-center">
                   <div>
@@ -443,6 +487,57 @@ const ProfessorDashboard: React.FC = () => {
                   </CardContent>
                 </Card>
               </>
+            ) : (
+              <>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-3xl font-bold text-gray-900">Class Schedule</h2>
+                    <p className="text-gray-600">Plan and manage your classes</p>
+                  </div>
+                  <Button onClick={() => { setEditSession(null); setIsScheduleOpen(true); }}>Schedule Class</Button>
+                </div>
+
+                <Card>
+                  <CardHeader className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <Button variant="outline" size="sm" onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1))}>{'<'} Prev</Button>
+                      <div className="font-medium">{monthLabel}</div>
+                      <Button variant="outline" size="sm" onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1))}>Next {'>'}</Button>
+                    </div>
+                    <CardDescription>Click a session to edit/cancel</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-7 gap-2 text-xs text-gray-600 mb-2">
+                      <div className="text-center">Sun</div>
+                      <div className="text-center">Mon</div>
+                      <div className="text-center">Tue</div>
+                      <div className="text-center">Wed</div>
+                      <div className="text-center">Thu</div>
+                      <div className="text-center">Fri</div>
+                      <div className="text-center">Sat</div>
+                    </div>
+                    <div className="grid grid-cols-7 gap-2">
+                      {monthDays.map((d, idx) => (
+                        <div key={idx} className="border rounded p-2 min-h-[100px]">
+                          {d ? (
+                            <>
+                              <div className="text-xs font-medium mb-1">{d.dayNum}</div>
+                              <div className="space-y-1">
+                                {(sessionsByDate.get(d.date) || []).map(s => (
+                                  <div key={s.id} className={`p-1 rounded border cursor-pointer ${s.canceled ? 'opacity-60 line-through' : 'hover:bg-gray-50'}`} onClick={() => { setEditSession(s); setIsScheduleOpen(true); }}>
+                                    <div className="text-[10px] font-medium">{s.subject}</div>
+                                    <div className="text-[10px] text-gray-600">{s.courseName} • {s.startTime}-{s.endTime}</div>
+                                  </div>
+                                ))}
+                              </div>
+                            </>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              </>
             )}
           </div>
         </main>
@@ -463,6 +558,43 @@ const ProfessorDashboard: React.FC = () => {
           setGradeList(prev => prev.map(s => s.id === id ? { ...s, ...updated } : s));
           setRefreshKey(v => v + 1);
           toast({ title: 'Saved', description: 'Grade and feedback saved.' });
+        }}
+      />
+
+      <ScheduleClassModal
+        isOpen={isScheduleOpen}
+        onClose={() => setIsScheduleOpen(false)}
+        initial={editSession ? { id: editSession.id, date: editSession.date, courseId: editSession.courseId, subject: editSession.subject, startTime: editSession.startTime, endTime: editSession.endTime, notes: editSession.notes } : undefined}
+        courses={professorCourses.map(c => ({ id: c.id, name: c.name }))}
+        onSubmit={(payload) => {
+          if (!user) return;
+          if (payload.id) {
+            const session = updateClassSession(payload.id, { date: payload.date, courseId: payload.courseId, subject: payload.subject, startTime: payload.startTime, endTime: payload.endTime, notes: payload.notes });
+            setEditSession(null);
+          } else {
+            const course = professorCourses.find(c => c.id === payload.courseId);
+            if (!course) return;
+            createSession({
+              courseId: payload.courseId,
+              courseName: course.name,
+              professorId: user.id,
+              subject: payload.subject,
+              date: payload.date,
+              startTime: payload.startTime,
+              endTime: payload.endTime,
+              notes: payload.notes,
+            });
+          }
+          setIsScheduleOpen(false);
+          setRefreshKey(v => v + 1);
+          toast({ title: 'Saved', description: 'Schedule updated.' });
+        }}
+        onCancel={(id: string) => {
+          cancelSession(id);
+          setIsScheduleOpen(false);
+          setEditSession(null);
+          setRefreshKey(v => v + 1);
+          toast({ title: 'Canceled', description: 'Class canceled.' });
         }}
       />
 
