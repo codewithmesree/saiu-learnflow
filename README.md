@@ -1,73 +1,133 @@
-# Welcome to your Lovable project
+# LearnFlow - Learning Management System
 
-## Project info
+A modern, responsive Learning Management System built with React, TypeScript, and Tailwind CSS.
 
-**URL**: https://lovable.dev/projects/211d4460-8c33-4901-bd47-7c4e9d2e5d87
+## Features
 
-## How can I edit this code?
+### Authentication System
+- **Admin Registration & Login**: Secure admin account creation and authentication
+- **Role-based Access Control**: Different permissions for admins, professors, and students
+- **Protected Routes**: Secure access to admin dashboard
 
-There are several ways of editing your application.
+### Admin Dashboard
+- **Overview Dashboard**: Key metrics and statistics
+- **User Management**: Register and manage students and professors
+- **Quick Actions**: Easy access to common administrative tasks
+- **Analytics**: Comprehensive insights and metrics (coming soon)
+- **Settings**: System configuration panel (coming soon)
 
-**Use Lovable**
+### User Registration System
+- **Student Registration**: Create student accounts with department assignment
+- **Professor Registration**: Create professor accounts with department assignment
+- **Department Selection**: Choose from 7 different schools:
+  - School of Computing and Data Science
+  - School of Arts and Sciences
+  - School of Law
+  - School of Business
+  - School of AI
+  - School of Media
+  - School of Technology
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/211d4460-8c33-4901-bd47-7c4e9d2e5d87) and start prompting.
+### Technical Features
+- **Modern UI Components**: Built with shadcn/ui components
+- **Form Validation**: Zod schema validation for all forms
+- **Responsive Design**: Mobile-first responsive design
+- **TypeScript**: Full type safety throughout the application
+- **Toast Notifications**: User feedback for successful operations
 
-Changes made via Lovable will be committed automatically to this repo.
+## Getting Started
 
-**Use your preferred IDE**
+### Prerequisites
+- Node.js 18+ 
+- npm or yarn
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+### Installation
+1. Clone the repository
+```bash
+git clone <repository-url>
+cd saiu-learnflow
+```
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+2. Install dependencies
+```bash
+npm install
+```
 
-Follow these steps:
-
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
+3. Start the development server
+```bash
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+4. Open your browser and navigate to `http://localhost:5173`
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+## Usage
 
-**Use GitHub Codespaces**
+### Admin Access
+- **Default Credentials**: 
+  - Email: `admin@learnflow.com`
+  - Password: `admin123`
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+### Registering New Users
+1. Login as an administrator
+2. Navigate to the Dashboard
+3. Use the "Register New Student" or "Register New Professor" buttons
+4. Fill in the required information:
+   - Full Name
+   - Email Address
+   - Department Selection
+   - Password
+   - Confirm Password
+5. Submit the form to create the new user account
 
-## What technologies are used for this project?
+### Department Options
+The system supports 7 different departments, each representing a school within the institution. Users must be assigned to one of these departments during registration.
 
-This project is built with:
+## Project Structure
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+```
+src/
+├── components/          # Reusable UI components
+│   ├── ui/            # shadcn/ui components
+│   └── UserRegistrationModal.tsx  # User registration modal
+├── contexts/           # React contexts
+│   └── AuthContext.tsx # Authentication context
+├── hooks/              # Custom React hooks
+├── pages/              # Page components
+│   ├── Dashboard.tsx   # Admin dashboard
+│   ├── Login.tsx       # Login page
+│   └── Register.tsx    # Admin registration
+├── types/              # TypeScript type definitions
+│   └── auth.ts         # Authentication types
+└── main.tsx            # Application entry point
+```
 
-## How can I deploy this project?
+## Technologies Used
 
-Simply open [Lovable](https://lovable.dev/projects/211d4460-8c33-4901-bd47-7c4e9d2e5d87) and click on Share -> Publish.
+- **Frontend**: React 18, TypeScript, Vite
+- **Styling**: Tailwind CSS
+- **UI Components**: shadcn/ui
+- **Form Handling**: React Hook Form with Zod validation
+- **State Management**: React Context API
+- **Routing**: React Router v6
 
-## Can I connect a custom domain to my Lovable project?
+## Future Enhancements
 
-Yes, you can!
+- [ ] Database integration for persistent user storage
+- [ ] Email verification system
+- [ ] Course management system
+- [ ] Student enrollment and progress tracking
+- [ ] Advanced analytics and reporting
+- [ ] Multi-language support
+- [ ] Mobile app development
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+## Contributing
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/tips-tricks/custom-domain#step-by-step-guide)
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests if applicable
+5. Submit a pull request
+
+## License
+
+This project is licensed under the MIT License.
