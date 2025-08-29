@@ -17,17 +17,20 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import JoinCourseModal from '../components/JoinCourseModal';
-import { listAllCourses } from '../lib/courseStorage';
+import { listAllCourses, joinCourseByCode } from '../lib/courseStorage';
+import { useToast } from '../hooks/use-toast';
 
 const StudentDashboard: React.FC = () => {
   const { user, logout } = useAuth();
+  const { toast } = useToast();
   const navigate = useNavigate();
   const [isJoinOpen, setIsJoinOpen] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const myCourses = useMemo(() => {
     const all = listAllCourses();
     return user ? all.filter(c => c.studentIds.includes(user.id)) : [];
-  }, [user, isJoinOpen]);
+  }, [user, isJoinOpen, refreshKey]);
 
   const handleLogout = () => {
     logout();
@@ -171,8 +174,9 @@ const StudentDashboard: React.FC = () => {
         onClose={() => setIsJoinOpen(false)}
         onJoin={(code: string) => {
           if (!user) throw new Error('Not authenticated');
-          const { joinCourseByCode } = require('../lib/courseStorage');
-          joinCourseByCode(code, user);
+          const course = joinCourseByCode(code, user);
+          toast({ title: 'Joined course', description: `You joined ${course.name}` });
+          setRefreshKey(v => v + 1);
         }}
       />
     </div>
