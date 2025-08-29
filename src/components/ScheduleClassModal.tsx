@@ -109,5 +109,3 @@ const ScheduleClassModal: React.FC<Props> = ({ isOpen, onClose, initial, courses
 };
 
 export default ScheduleClassModal;
-
-

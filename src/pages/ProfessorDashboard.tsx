@@ -115,9 +115,12 @@ const ProfessorDashboard: React.FC = () => {
     const days: Array<{ date: string; dayNum: number } | null> = [];
     for (let i = 0; i < startWeekday; i++) days.push(null);
     for (let d = 1; d <= daysInMonth; d++) {
-      const ds = new Date(year, month, d);
-      const iso = ds.toISOString().slice(0, 10);
-      days.push({ date: iso, dayNum: d });
+      // Build a local date string (YYYY-MM-DD) without timezone conversion
+      const yyyy = year.toString();
+      const mm = String(month + 1).padStart(2, '0');
+      const dd = String(d).padStart(2, '0');
+      const localDate = `${yyyy}-${mm}-${dd}`;
+      days.push({ date: localDate, dayNum: d });
     }
     // pad to full weeks
     while (days.length % 7 !== 0) days.push(null);
