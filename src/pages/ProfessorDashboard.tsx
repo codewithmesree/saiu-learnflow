@@ -20,12 +20,19 @@ import {
   Clock,
   CheckCircle,
   AlertCircle,
-  ArrowRight
+  ArrowRight,
+  ListChecks,
+  Download
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import CourseCreationModal from '../components/CourseCreationModal';
 import { createCourse, getCoursesByProfessor } from '../lib/courseStorage';
 import { Course } from '../types/course';
+import { listAssignmentsByCourse } from '../lib/assignmentStorage';
+import { listSubmissionsByAssignment, updateSubmission } from '../lib/submissionStorage';
+import { Submission } from '../types/submission';
+import { useToast } from '../hooks/use-toast';
+import GradeSubmissionsModal from '../components/GradeSubmissionsModal';
 
 // Mock data for demonstration
 const mockStats = {
@@ -55,13 +62,46 @@ const mockRecentActivity = [
 
 const ProfessorDashboard: React.FC = () => {
   const { user, logout } = useAuth();
+  const { toast } = useToast();
   const navigate = useNavigate();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [activeSection, setActiveSection] = useState<'dashboard' | 'assignments' | 'all_assignments'>('dashboard');
+
+  const [isGradeOpen, setIsGradeOpen] = useState(false);
+  const [gradeList, setGradeList] = useState<Submission[]>([]);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const professorCourses = useMemo<Course[]>(() => {
     return user ? getCoursesByProfessor(user.id) : [];
   }, [user, isCreateOpen]);
+
+  const allAssignments = useMemo(() => {
+    if (!user) return [] as any[];
+    const data: Array<{ id: string; courseId: string; courseName: string; message: string; dueAt: string; fileDataBase64?: string; fileName?: string; }> = [];
+    for (const c of professorCourses) {
+      const asns = listAssignmentsByCourse(c.id);
+      for (const a of asns) {
+        data.push({ id: a.id, courseId: c.id, courseName: c.name, message: a.message, dueAt: a.dueAt, fileDataBase64: a.fileDataBase64, fileName: a.fileName });
+      }
+    }
+    // sort by due date ascending
+    data.sort((a, b) => new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime());
+    return data;
+  }, [professorCourses]);
+
+  const studentGroups = useMemo(() => {
+    const byStudent = new Map<string, { studentName: string; submissions: Submission[] }>();
+    for (const a of allAssignments) {
+      const subs = listSubmissionsByAssignment(a.id);
+      for (const s of subs) {
+        const entry = byStudent.get(s.studentId) || { studentName: s.studentName, submissions: [] };
+        entry.submissions.push(s);
+        byStudent.set(s.studentId, entry);
+      }
+    }
+    return Array.from(byStudent.entries()).map(([studentId, data]) => ({ studentId, ...data }));
+  }, [allAssignments, refreshKey]);
 
   const handleLogout = () => {
     logout();
@@ -72,6 +112,15 @@ const ProfessorDashboard: React.FC = () => {
     if (!user) throw new Error('Not authenticated');
     const course = createCourse(user, input);
     return course;
+  };
+
+  const downloadAttachment = (aId: string) => {
+    const a = allAssignments.find(x => x.id === aId);
+    if (!a || !a.fileDataBase64) return;
+    const link = document.createElement('a');
+    link.href = a.fileDataBase64;
+    link.download = a.fileName || 'assignment';
+    link.click();
   };
 
   if (!user || user.role !== 'professor') {
@@ -159,7 +208,7 @@ const ProfessorDashboard: React.FC = () => {
           </div>
           
           <nav className="p-4 space-y-2">
-            <Button variant="ghost" className="w-full justify-start" onClick={() => setIsSidebarOpen(false)}>
+            <Button variant="ghost" className="w-full justify-start" onClick={() => { setActiveSection('dashboard'); setIsSidebarOpen(false); }}>
               <BarChart3 className="h-4 w-4 mr-3" />
               Dashboard
             </Button>
@@ -171,7 +220,7 @@ const ProfessorDashboard: React.FC = () => {
               <Users className="h-4 w-4 mr-3" />
               Students
             </Button>
-            <Button variant="ghost" className="w-full justify-start" onClick={() => setIsSidebarOpen(false)}>
+            <Button variant="ghost" className="w-full justify-start" onClick={() => { setActiveSection('assignments'); setIsSidebarOpen(false); }}>
               <FileText className="h-4 w-4 mr-3" />
               Assignments
             </Button>
@@ -183,9 +232,9 @@ const ProfessorDashboard: React.FC = () => {
               <Award className="h-4 w-4 mr-3" />
               Grades
             </Button>
-            <Button variant="ghost" className="w-full justify-start" onClick={() => setIsSidebarOpen(false)}>
-              <TrendingUp className="h-4 w-4 mr-3" />
-              Analytics
+            <Button variant="ghost" className="w-full justify-start" onClick={() => { setActiveSection('all_assignments'); setIsSidebarOpen(false); }}>
+              <ListChecks className="h-4 w-4 mr-3" />
+              All Assignments
             </Button>
           </nav>
         </div>
@@ -193,101 +242,208 @@ const ProfessorDashboard: React.FC = () => {
         {/* Main Content */}
         <main className="flex-1 p-8">
           <div className="max-w-7xl mx-auto space-y-6">
-            {/* Page Header */}
-            <div className="flex justify-between items-center">
-              <div>
-                <h2 className="text-3xl font-bold text-gray-900">Professor Dashboard</h2>
-                <p className="text-gray-600">Monitor student progress and manage your courses</p>
-              </div>
-              <Button size="lg" className="bg-green-600 hover:bg-green-700" onClick={() => setIsCreateOpen(true)}>
-                <Plus className="h-5 w-5 mr-2" />
-                Create New Course
-              </Button>
-            </div>
-
-            {/* Your Courses */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Your Courses</CardTitle>
-                <CardDescription>Courses you have created</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {professorCourses.length === 0 ? (
-                  <div className="text-sm text-gray-500">You have not created any courses yet.</div>
-                ) : (
-                  <div className="space-y-3">
-                    {professorCourses.map(course => (
-                      <div key={course.id} className="flex items-center justify-between p-3 border rounded hover:bg-gray-50">
-                        <div>
-                          <div className="font-medium">{course.name}</div>
-                          <div className="text-sm text-gray-500">Subject: {course.subject} • Code: <span className="font-mono">{course.code}</span></div>
-                        </div>
-                        <Button variant="outline" onClick={() => navigate(`/course/${course.id}`)}>
-                          Open <ArrowRight className="h-4 w-4 ml-2" />
-                        </Button>
-                      </div>
-                    ))}
+            {activeSection === 'dashboard' ? (
+              <>
+                {/* Page Header */}
+                <div className="flex justify-between items-center">
+                  <div>
+                    <h2 className="text-3xl font-bold text-gray-900">Professor Dashboard</h2>
+                    <p className="text-gray-600">Monitor student progress and manage your courses</p>
                   </div>
-                )}
-              </CardContent>
-            </Card>
+                  <Button size="lg" className="bg-green-600 hover:bg-green-700" onClick={() => setIsCreateOpen(true)}>
+                    <Plus className="h-5 w-5 mr-2" />
+                    Create New Course
+                  </Button>
+                </div>
 
-            {/* Stats Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Total Students</CardTitle>
-                  <Users className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">156</div>
-                  <p className="text-xs text-muted-foreground">
-                    142 active
-                  </p>
-                </CardContent>
-              </Card>
+                {/* Your Courses */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Your Courses</CardTitle>
+                    <CardDescription>Courses you have created</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {professorCourses.length === 0 ? (
+                      <div className="text-sm text-gray-500">You have not created any courses yet.</div>
+                    ) : (
+                      <div className="space-y-3">
+                        {professorCourses.map(course => (
+                          <div key={course.id} className="flex items-center justify-between p-3 border rounded hover:bg-gray-50">
+                            <div>
+                              <div className="font-medium">{course.name}</div>
+                              <div className="text-sm text-gray-500">Subject: {course.subject} • Code: <span className="font-mono">{course.code}</span></div>
+                            </div>
+                            <Button variant="outline" onClick={() => navigate(`/course/${course.id}`)}>
+                              Open <ArrowRight className="h-4 w-4 ml-2" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
 
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Total Courses</CardTitle>
-                  <BookOpen className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{professorCourses.length}</div>
-                  <p className="text-xs text-muted-foreground">
-                    All active
-                  </p>
-                </CardContent>
-              </Card>
+                {/* Stats Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                  <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                      <CardTitle className="text-sm font-medium">Total Students</CardTitle>
+                      <Users className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold">156</div>
+                      <p className="text-xs text-muted-foreground">
+                        142 active
+                      </p>
+                    </CardContent>
+                  </Card>
 
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Average Progress</CardTitle>
-                  <TrendingUp className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">78%</div>
-                  <p className="text-xs text-muted-foreground">
-                    Across all courses
-                  </p>
-                </CardContent>
-              </Card>
+                  <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                      <CardTitle className="text-sm font-medium">Total Courses</CardTitle>
+                      <BookOpen className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold">{professorCourses.length}</div>
+                      <p className="text-xs text-muted-foreground">
+                        All active
+                      </p>
+                    </CardContent>
+                  </Card>
 
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Assignments</CardTitle>
-                  <FileText className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">89</div>
-                  <p className="text-xs text-muted-foreground">
-                    23 pending
-                  </p>
-                </CardContent>
-              </Card>
-            </div>
+                  <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                      <CardTitle className="text-sm font-medium">Average Progress</CardTitle>
+                      <TrendingUp className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold">78%</div>
+                      <p className="text-xs text-muted-foreground">
+                        Across all courses
+                      </p>
+                    </CardContent>
+                  </Card>
 
-            {/* Student Analytics and Recent Activity remain */}
+                  <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                      <CardTitle className="text-sm font-medium">Assignments</CardTitle>
+                      <FileText className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold">89</div>
+                      <p className="text-xs text-muted-foreground">
+                        23 pending
+                      </p>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                {/* Student Analytics and Recent Activity remain */}
+              </>
+            ) : activeSection === 'assignments' ? (
+              <>
+                <div className="flex justify-between items-center">
+                  <div>
+                    <h2 className="text-3xl font-bold text-gray-900">Student Submissions</h2>
+                    <p className="text-gray-600">Click to review what each student submitted</p>
+                  </div>
+                </div>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Students</CardTitle>
+                    <CardDescription>Across your courses</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {studentGroups.length === 0 ? (
+                      <div className="text-sm text-gray-500">No submissions from students yet.</div>
+                    ) : (
+                      <div className="space-y-3">
+                        {studentGroups.map(group => (
+                          <div key={group.studentId} className="p-3 border rounded">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <div className="font-medium">{group.studentName}</div>
+                                <div className="text-xs text-gray-500">{group.submissions.length} submission{group.submissions.length === 1 ? '' : 's'}</div>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <Button size="sm" onClick={() => { setGradeList(group.submissions); setIsGradeOpen(true); }}>
+                                  <ListChecks className="h-4 w-4 mr-2" /> Review All
+                                </Button>
+                              </div>
+                            </div>
+                            <div className="mt-3 space-y-2">
+                              {group.submissions.map(s => (
+                                <div key={s.id} className="flex items-center justify-between p-2 border rounded hover:bg-gray-50">
+                                  <div>
+                                    <div className="text-sm">Submitted: {new Date(s.submittedAt).toLocaleString()}</div>
+                                    <div className="text-xs text-gray-500">Grade: {s.grade !== undefined ? s.grade : 'Pending'}</div>
+                                  </div>
+                                  <div className="flex items-center space-x-2">
+                                    <Button size="sm" variant="outline" onClick={() => { const link = document.createElement('a'); link.href = s.fileDataBase64; link.download = s.fileName || 'submission'; link.click(); }}>
+                                      <Download className="h-4 w-4" />
+                                    </Button>
+                                    <Button size="sm" onClick={() => { setGradeList([s]); setIsGradeOpen(true); }}>
+                                      Review
+                                    </Button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </>
+            ) : (
+              <>
+                <div className="flex justify-between items-center">
+                  <div>
+                    <h2 className="text-3xl font-bold text-gray-900">All Assignments</h2>
+                    <p className="text-gray-600">View and grade submissions across your courses</p>
+                  </div>
+                </div>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Assignments</CardTitle>
+                    <CardDescription>Across all your courses</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {allAssignments.length === 0 ? (
+                      <div className="text-sm text-gray-500">No assignments found.</div>
+                    ) : (
+                      <div className="space-y-3">
+                        {allAssignments.map(a => {
+                          const subs = listSubmissionsByAssignment(a.id);
+                          return (
+                            <div key={a.id} className="p-3 border rounded flex items-center justify-between">
+                              <div>
+                                <div className="font-medium">{a.courseName}</div>
+                                <div className="text-sm text-gray-700 whitespace-pre-wrap">{a.message}</div>
+                                <div className="text-xs text-gray-500 mt-1">Due: {new Date(a.dueAt).toLocaleString()} • Submissions: {subs.length}</div>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                {a.fileDataBase64 && (
+                                  <Button size="sm" variant="outline" onClick={() => downloadAttachment(a.id)}>
+                                    <Download className="h-4 w-4" />
+                                  </Button>
+                                )}
+                                <Button size="sm" onClick={() => { setGradeList(listSubmissionsByAssignment(a.id)); setIsGradeOpen(true); }}>
+                                  <ListChecks className="h-4 w-4 mr-2" /> Grade
+                                </Button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </>
+            )}
           </div>
         </main>
       </div>
@@ -296,6 +452,18 @@ const ProfessorDashboard: React.FC = () => {
         isOpen={isCreateOpen}
         onClose={() => setIsCreateOpen(false)}
         onCreate={handleCreateCourse}
+      />
+
+      <GradeSubmissionsModal
+        isOpen={isGradeOpen}
+        onClose={() => { setIsGradeOpen(false); setGradeList([]); }}
+        submissions={gradeList}
+        onSave={(id: string, updates) => {
+          const updated = updateSubmission(id, updates);
+          setGradeList(prev => prev.map(s => s.id === id ? { ...s, ...updated } : s));
+          setRefreshKey(v => v + 1);
+          toast({ title: 'Saved', description: 'Grade and feedback saved.' });
+        }}
       />
 
       {isSidebarOpen && (

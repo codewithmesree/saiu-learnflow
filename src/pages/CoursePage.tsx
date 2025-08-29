@@ -3,13 +3,15 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { getCourseById } from '../lib/courseStorage';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
-import { ArrowLeft, Megaphone, FileText, Users, Edit3, Trash2, Download, Plus } from 'lucide-react';
+import { ArrowLeft, Megaphone, FileText, Users, Edit3, Trash2, Download, Plus, ListChecks } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs';
 import { listAnnouncementsByCourse, createAnnouncement, updateAnnouncement, deleteAnnouncement } from '../lib/announcementStorage';
 import { useAuth } from '../contexts/AuthContext';
 import AnnouncementModal from '../components/AnnouncementModal';
 import { listAssignmentsByCourse, createAssignment, updateAssignment, deleteAssignment } from '../lib/assignmentStorage';
 import AssignmentModal from '../components/AssignmentModal';
+import GradeSubmissionsModal from '../components/GradeSubmissionsModal';
+import { listSubmissionsByAssignment, updateSubmission } from '../lib/submissionStorage';
 
 const toDataUrl = (file: File): Promise<{ base64: string; type: string; name: string; }> => {
   return new Promise((resolve, reject) => {
@@ -32,6 +34,9 @@ const CoursePage: React.FC = () => {
   const [isAsnModalOpen, setIsAsnModalOpen] = useState(false);
   const [editAsnId, setEditAsnId] = useState<string | null>(null);
 
+  const [isGradeOpen, setIsGradeOpen] = useState(false);
+  const [gradeAssignmentId, setGradeAssignmentId] = useState<string | null>(null);
+
   const announcements = useMemo(() => {
     return course ? listAnnouncementsByCourse(course.id) : [];
   }, [course, refreshKey]);
@@ -39,6 +44,11 @@ const CoursePage: React.FC = () => {
   const assignments = useMemo(() => {
     return course ? listAssignmentsByCourse(course.id) : [];
   }, [course, refreshKey]);
+
+  const submissionsForGrading = useMemo(() => {
+    if (!gradeAssignmentId) return [];
+    return listSubmissionsByAssignment(gradeAssignmentId);
+  }, [gradeAssignmentId, refreshKey]);
 
   if (!course) {
     return (
@@ -256,6 +266,9 @@ const CoursePage: React.FC = () => {
                                 <Button size="sm" variant="outline" onClick={() => removeAssignment(a.id)} className="text-red-600 hover:text-red-700">
                                   <Trash2 className="h-4 w-4" />
                                 </Button>
+                                <Button size="sm" onClick={() => { setGradeAssignmentId(a.id); setIsGradeOpen(true); }}>
+                                  <ListChecks className="h-4 w-4 mr-2" /> Grade
+                                </Button>
                               </>
                             )}
                           </div>
@@ -317,6 +330,14 @@ const CoursePage: React.FC = () => {
         initial={editAsnId ? getAssignmentInitial(editAsnId) : undefined}
         onSubmit={(payload) => editAsnId ? handleEditAssignment(editAsnId, payload) : handleCreateAssignment(payload)}
         title={editAsnId ? 'Edit Assignment' : 'New Assignment'}
+      />
+
+      {/* Grade Submissions */}
+      <GradeSubmissionsModal
+        isOpen={isGradeOpen}
+        onClose={() => { setIsGradeOpen(false); setGradeAssignmentId(null); setRefreshKey(v => v + 1); }}
+        submissions={submissionsForGrading}
+        onSave={(id: string, updates) => { updateSubmission(id, updates); setRefreshKey(v => v + 1); }}
       />
     </div>
   );

@@ -13,12 +13,25 @@ import {
   Clock,
   CheckCircle,
   Plus,
-  ArrowRight
+  ArrowRight,
+  Download
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import JoinCourseModal from '../components/JoinCourseModal';
-import { listAllCourses, joinCourseByCode } from '../lib/courseStorage';
+import { listAllCourses, joinCourseByCode, getCourseById } from '../lib/courseStorage';
 import { useToast } from '../hooks/use-toast';
+import { listAssignmentsByCourse } from '../lib/assignmentStorage';
+import { listSubmissionsByStudent, createSubmission } from '../lib/submissionStorage';
+import SubmitAssignmentModal from '../components/SubmitAssignmentModal';
+
+const toDataUrl = (file: File): Promise<{ base64: string; type: string; name: string; }> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve({ base64: reader.result as string, type: file.type, name: file.name });
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+};
 
 const StudentDashboard: React.FC = () => {
   const { user, logout } = useAuth();
@@ -27,10 +40,37 @@ const StudentDashboard: React.FC = () => {
   const [isJoinOpen, setIsJoinOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
 
+  const [isSubmitOpen, setIsSubmitOpen] = useState(false);
+  const [activeAssignment, setActiveAssignment] = useState<any>(null);
+
   const myCourses = useMemo(() => {
     const all = listAllCourses();
     return user ? all.filter(c => c.studentIds.includes(user.id)) : [];
   }, [user, isJoinOpen, refreshKey]);
+
+  const myPendingAssignments = useMemo(() => {
+    if (!user) return [] as any[];
+    const submissions = listSubmissionsByStudent(user.id);
+    const submittedMap = new Set(submissions.map(s => s.assignmentId));
+    const assignments: any[] = [];
+    for (const c of myCourses) {
+      const asns = listAssignmentsByCourse(c.id);
+      for (const a of asns) {
+        const due = new Date(a.dueAt).getTime();
+        const now = Date.now();
+        const isSubmitted = submittedMap.has(a.id);
+        if (!isSubmitted && due >= now) assignments.push({ ...a, courseName: c.name });
+      }
+    }
+    // sort by nearest due date
+    assignments.sort((a, b) => new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime());
+    return assignments;
+  }, [myCourses, refreshKey, user]);
+
+  const mySubmissions = useMemo(() => {
+    if (!user) return [] as any[];
+    return listSubmissionsByStudent(user.id).sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime());
+  }, [user, refreshKey]);
 
   const handleLogout = () => {
     logout();
@@ -116,6 +156,80 @@ const StudentDashboard: React.FC = () => {
             </Button>
           </div>
 
+          {/* Pending Assignments */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Pending Assignments</CardTitle>
+              <CardDescription>Assignments you need to submit before the deadline</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {myPendingAssignments.length === 0 ? (
+                <div className="text-sm text-gray-500">No pending assignments. Great job!</div>
+              ) : (
+                <div className="space-y-3">
+                  {myPendingAssignments.map((a) => (
+                    <div key={a.id} className="p-3 border rounded">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="font-medium">{a.courseName}</div>
+                          <div className="text-sm text-gray-500">Due: {new Date(a.dueAt).toLocaleString()}</div>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          {a.fileDataBase64 && (
+                            <Button size="sm" variant="outline" onClick={() => {
+                              const link = document.createElement('a');
+                              link.href = a.fileDataBase64;
+                              link.download = a.fileName || 'assignment';
+                              link.click();
+                            }}>
+                              <Download className="h-4 w-4" />
+                            </Button>
+                          )}
+                          <Button size="sm" onClick={() => { setActiveAssignment(a); setIsSubmitOpen(true); }}>
+                            Submit
+                          </Button>
+                        </div>
+                      </div>
+                      <div className="mt-2 text-sm text-gray-700 whitespace-pre-wrap">{a.message}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Submitted Assignments */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Submitted Assignments</CardTitle>
+              <CardDescription>Your submissions and grades</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {mySubmissions.length === 0 ? (
+                <div className="text-sm text-gray-500">No submissions yet.</div>
+              ) : (
+                <div className="space-y-3">
+                  {mySubmissions.map((s) => (
+                    <div key={s.id} className="p-3 border rounded">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="text-sm text-gray-500">Submitted: {new Date(s.submittedAt).toLocaleString()}</div>
+                          <div className="text-xs text-gray-500">Grade: {s.grade !== undefined ? s.grade : 'Pending'}</div>
+                        </div>
+                        <Button size="sm" variant="outline" onClick={() => { const link = document.createElement('a'); link.href = s.fileDataBase64; link.download = s.fileName || 'submission'; link.click(); }}>
+                          <Download className="h-4 w-4 mr-2" /> Download
+                        </Button>
+                      </div>
+                      {s.feedback && (
+                        <div className="mt-1 text-xs text-gray-600">Feedback: {s.feedback}</div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
           {/* My Courses */}
           <Card>
             <CardHeader>
@@ -168,6 +282,29 @@ const StudentDashboard: React.FC = () => {
           </Card>
         </div>
       </main>
+
+      {/* Submit assignment modal */}
+      <SubmitAssignmentModal
+        isOpen={isSubmitOpen}
+        onClose={() => setIsSubmitOpen(false)}
+        assignment={activeAssignment}
+        onSubmit={async (file: File) => {
+          if (!user || !activeAssignment) return;
+          const { base64, type, name } = await toDataUrl(file);
+          createSubmission({
+            assignmentId: activeAssignment.id,
+            courseId: activeAssignment.courseId,
+            studentId: user.id,
+            studentName: user.name,
+            fileName: name,
+            fileType: type,
+            fileDataBase64: base64,
+          });
+          toast({ title: 'Submitted', description: 'Your assignment was submitted successfully.' });
+          setIsSubmitOpen(false);
+          setRefreshKey(v => v + 1);
+        }}
+      />
 
       <JoinCourseModal
         isOpen={isJoinOpen}
